@@ -27,7 +27,7 @@ def build_topology_layout(net, seed: int = 42):
     pos = nx.spring_layout(graph, seed=seed, k=1.6, iterations=150)
 
     # Stretch horizontal axis for better readability.
-    return {node: (float(x) * 8.0, float(y) * 5.0) for node, (x, y) in pos.items()}
+    return {node: (float(x) * 16.0, float(y) * 7.0) for node, (x, y) in pos.items()}
 
 
 def offset_label(x1, y1, x2, y2, offset=0.35):
@@ -49,7 +49,7 @@ def plot_upgrade_ranking(upgrade_df: pd.DataFrame):
     if upgrade_df.empty:
         return None
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(17, 8))
     top = upgrade_df.head(10).copy()
     ax.bar(top["violated_device"], top["upgrade_priority_score"])
     ax.set_title("Upgrade Priority Ranking by Failed Device")

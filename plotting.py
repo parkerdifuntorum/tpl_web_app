@@ -8,19 +8,97 @@ import plotly.graph_objects as go
 
 
 def build_topology_layout(net, seed: int = 42):
+    """
+    Build automatic bus coordinates from current network topology.
+
+    For the default model, this uses a deterministic layered one-line layout
+    to reduce non-connected line crossings:
+      - 230 kV buses on the upper row
+      - 115 kV buses on the middle row
+      - 12.5 kV generator terminal buses below or above their interconnection buses
+
+    For user-added buses that do not match the default naming pattern,
+    the app falls back to wide NetworkX placement for those nodes.
+    """
     graph = nx.Graph()
+
     for bus_idx in net.bus.index:
         graph.add_node(int(bus_idx))
+
     for idx in net.line.index:
         if bool(net.line.at[idx, "in_service"]):
-            graph.add_edge(int(net.line.at[idx, "from_bus"]), int(net.line.at[idx, "to_bus"]))
+            graph.add_edge(
+                int(net.line.at[idx, "from_bus"]),
+                int(net.line.at[idx, "to_bus"])
+            )
+
     for idx in net.trafo.index:
         if bool(net.trafo.at[idx, "in_service"]):
-            graph.add_edge(int(net.trafo.at[idx, "hv_bus"]), int(net.trafo.at[idx, "lv_bus"]))
+            graph.add_edge(
+                int(net.trafo.at[idx, "hv_bus"]),
+                int(net.trafo.at[idx, "lv_bus"])
+            )
+
     if len(graph.nodes) == 0:
         return {}
-    pos = nx.spring_layout(graph, seed=seed, k=3.0, iterations=400)
-    return {node: (float(x) * 32.0, float(y) * 14.0) for node, (x, y) in pos.items()}
+
+    def infer_bus_id(bus_name: str):
+        if bus_name.startswith("Bus 1"):
+            return "B1"
+        if bus_name.startswith("Bus 2"):
+            return "B2"
+        if bus_name.startswith("Bus 3"):
+            return "B3"
+        if bus_name.startswith("Bus 4"):
+            return "B4"
+        if bus_name.startswith("Bus 5"):
+            return "B5"
+        if bus_name.startswith("Bus 6"):
+            return "B6"
+        if bus_name.startswith("Bus 7"):
+            return "B7"
+        if bus_name.startswith("Gen Bus G2"):
+            return "G2"
+        if bus_name.startswith("Gen Bus G5"):
+            return "G5"
+        if bus_name.startswith("Gen Bus G7"):
+            return "G7"
+        return None
+
+    # Crossing-reduced layered one-line positions for the default model.
+    # 115 kV row is ordered to reduce crossings between 4-7, 5-7, 6-7, 4-6, 5-6, and 4-5.
+    bus_id_positions = {
+        "B1": (0.0, 10.0),
+        "B2": (12.0, 10.0),
+        "B3": (24.0, 10.0),
+
+        "B7": (0.0, 0.0),
+        "B6": (8.0, 0.0),
+        "B5": (16.0, 0.0),
+        "B4": (24.0, 0.0),
+
+        "G7": (0.0, -7.0),
+        "G5": (16.0, -7.0),
+        "G2": (12.0, 17.0),
+    }
+
+    pos = {}
+
+    for idx in net.bus.index:
+        bus_name = str(net.bus.at[idx, "name"])
+        bus_id = infer_bus_id(bus_name)
+        if bus_id in bus_id_positions:
+            pos[int(idx)] = bus_id_positions[bus_id]
+
+    # Fallback for custom/user-added buses.
+    missing = [int(idx) for idx in net.bus.index if int(idx) not in pos]
+    if missing:
+        spring_pos = nx.spring_layout(graph, seed=seed, k=3.0, iterations=400)
+        for node in missing:
+            x, y = spring_pos[node]
+            pos[node] = (float(x) * 32.0, float(y) * 14.0)
+
+    return pos
 
 
 def _midpoint(x1, y1, x2, y2):
@@ -169,7 +247,19 @@ def plot_recommended_upgrade_case(net, original_loads, base_case, recommended_ro
                 arrowcolor=color, opacity=0.9,
             )
 
-        tx, ty = _offset_point(x1, y1, x2, y2, offset=1.15)
+        line_label_offsets = {
+            "Line 1-2": 1.25,
+            "Line 2-3 A": 1.45,
+            "Line 2-3 B": -1.45,
+            "Line 1-3": -1.25,
+            "Line 4-5": 1.25,
+            "Line 4-7 Tie": -1.35,
+            "Line 5-6": 1.25,
+            "Line 6-7": -1.25,
+            "Line 4-6": 1.55,
+            "Line 5-7": -1.55,
+        }
+        tx, ty = _offset_point(x1, y1, x2, y2, offset=line_label_offsets.get(name, 1.15))
         label = f"{name}<br>{cont_text}"
         if name == recommended_device:
             label = f"<b>UPGRADE</b><br>{name}<br>{cont_text}"
@@ -303,7 +393,7 @@ def plot_recommended_upgrade_case(net, original_loads, base_case, recommended_ro
             dict(text=summary, x=0.5, y=-0.10, xref="paper", yref="paper", showarrow=False, align="center", font=dict(size=12), bordercolor="black", borderwidth=1, bgcolor="white", opacity=0.95),
             dict(text="Legend: blue dashed = outaged line | dark red = recommended upgrade | red = overloaded | orange bus = voltage violation | hover/zoom/pan for details", x=0.5, y=-0.17, xref="paper", yref="paper", showarrow=False, align="center", font=dict(size=11), bgcolor="white", opacity=0.9),
         ],
-        height=860,
+        height=920,
         margin=dict(l=20, r=20, t=70, b=155),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),

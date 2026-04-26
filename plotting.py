@@ -249,15 +249,11 @@ def plot_recommended_upgrade_case(net, original_loads, base_case, recommended_ro
 
         line_label_offsets = {
             "Line 1-2": 1.25,
-            "Line 2-3 A": 1.45,
-            "Line 2-3 B": -1.45,
-            "Line 1-3": -1.25,
+            "Line 2-3": 1.45,
             "Line 4-5": 1.25,
-            "Line 4-7 Tie": -1.35,
             "Line 5-6": 1.25,
             "Line 6-7": -1.25,
             "Line 4-6": 1.55,
-            "Line 5-7": -1.55,
         }
         tx, ty = _offset_point(x1, y1, x2, y2, offset=line_label_offsets.get(name, 1.15))
         label = f"{name}<br>{cont_text}"

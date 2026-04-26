@@ -1,5 +1,5 @@
 streamlit
 pandapower
 pandas
-matplotlib
 networkx
+plotly

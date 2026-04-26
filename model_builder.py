@@ -18,15 +18,7 @@ def _clean_bool(value) -> bool:
     return str(value).strip().lower() not in {"false", "0", "no", "n"}
 
 
-def build_network(
-    buses_df: pd.DataFrame,
-    lines_df: pd.DataFrame,
-    trafos_df: pd.DataFrame,
-    gens_df: pd.DataFrame,
-    loads_df: pd.DataFrame,
-    ext_grids_df: pd.DataFrame,
-):
-    """Builds a pandapower network from editable dataframes."""
+def build_network(buses_df, lines_df, trafos_df, gens_df, loads_df, ext_grids_df):
     _require_columns(buses_df, ["bus_id", "name", "vn_kv"], "buses_df")
     _require_columns(lines_df, ["name", "from_bus_id", "to_bus_id", "length_km", "r_ohm_per_km", "x_ohm_per_km", "c_nf_per_km", "max_i_ka"], "lines_df")
     _require_columns(trafos_df, ["name", "hv_bus_id", "lv_bus_id", "sn_mva", "vn_hv_kv", "vn_lv_kv", "vk_percent", "vkr_percent", "pfe_kw", "i0_percent"], "trafos_df")
@@ -51,12 +43,7 @@ def build_network(
         return bus_lookup[key]
 
     for _, row in ext_grids_df.dropna(subset=["bus_id"]).iterrows():
-        pp.create_ext_grid(
-            net,
-            bus=bus_idx(row["bus_id"]),
-            vm_pu=float(row["vm_pu"]),
-            name=str(row["name"]),
-        )
+        pp.create_ext_grid(net, bus=bus_idx(row["bus_id"]), vm_pu=float(row["vm_pu"]), name=str(row["name"]))
 
     for _, row in gens_df.dropna(subset=["bus_id"]).iterrows():
         pp.create_gen(
@@ -70,13 +57,7 @@ def build_network(
         )
 
     for _, row in loads_df.dropna(subset=["bus_id"]).iterrows():
-        pp.create_load(
-            net,
-            bus=bus_idx(row["bus_id"]),
-            p_mw=float(row["p_mw"]),
-            q_mvar=float(row["q_mvar"]),
-            name=str(row["name"]),
-        )
+        pp.create_load(net, bus=bus_idx(row["bus_id"]), p_mw=float(row["p_mw"]), q_mvar=float(row["q_mvar"]), name=str(row["name"]))
 
     for _, row in lines_df.dropna(subset=["from_bus_id", "to_bus_id"]).iterrows():
         idx = pp.create_line_from_parameters(
@@ -113,11 +94,24 @@ def build_network(
     if len(net.ext_grid) == 0:
         raise ValueError("At least one external grid/slack source is required.")
 
+    validate_voltage_level_consistency(net)
     return net, bus_lookup
 
 
+def validate_voltage_level_consistency(net):
+    bad_lines = []
+    for idx in net.line.index:
+        fb = net.line.at[idx, "from_bus"]
+        tb = net.line.at[idx, "to_bus"]
+        if float(net.bus.at[fb, "vn_kv"]) != float(net.bus.at[tb, "vn_kv"]):
+            bad_lines.append(
+                f"{net.line.at[idx, 'name']}: {net.bus.at[fb, 'vn_kv']} kV to {net.bus.at[tb, 'vn_kv']} kV"
+            )
+    if bad_lines:
+        raise ValueError("Invalid line voltage connection(s). Use transformers between voltage levels: " + "; ".join(bad_lines))
+
+
 def apply_base_case(net, base_case: pd.Series, original_loads: pd.DataFrame):
-    """Applies load scale and generator dispatch values to an existing pandapower network."""
     load_scale = float(base_case.get("load_scale", 1.0))
 
     for idx in net.load.index:

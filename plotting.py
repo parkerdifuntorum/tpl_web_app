@@ -1,76 +1,89 @@
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-import networkx as nx
-import pandapower as pp
+import math
 import pandas as pd
+import pandapower as pp
+import networkx as nx
+import plotly.graph_objects as go
 
 
 def build_topology_layout(net, seed: int = 42):
-    """Builds automatic bus coordinates from current network topology."""
     graph = nx.Graph()
-
     for bus_idx in net.bus.index:
         graph.add_node(int(bus_idx))
-
     for idx in net.line.index:
         if bool(net.line.at[idx, "in_service"]):
             graph.add_edge(int(net.line.at[idx, "from_bus"]), int(net.line.at[idx, "to_bus"]))
-
     for idx in net.trafo.index:
         if bool(net.trafo.at[idx, "in_service"]):
             graph.add_edge(int(net.trafo.at[idx, "hv_bus"]), int(net.trafo.at[idx, "lv_bus"]))
-
     if len(graph.nodes) == 0:
         return {}
-
-    pos = nx.spring_layout(graph, seed=seed, k=1.6, iterations=150)
-
-    # Stretch horizontal axis for better readability.
-    return {node: (float(x) * 16.0, float(y) * 7.0) for node, (x, y) in pos.items()}
+    pos = nx.spring_layout(graph, seed=seed, k=3.0, iterations=400)
+    return {node: (float(x) * 32.0, float(y) * 14.0) for node, (x, y) in pos.items()}
 
 
-def offset_label(x1, y1, x2, y2, offset=0.35):
-    mx = (x1 + x2) / 2
-    my = (y1 + y2) / 2
+def _midpoint(x1, y1, x2, y2):
+    return (x1 + x2) / 2.0, (y1 + y2) / 2.0
+
+
+def _offset_point(x1, y1, x2, y2, offset=0.8):
+    mx, my = _midpoint(x1, y1, x2, y2)
     dx = x2 - x1
     dy = y2 - y1
-    length = (dx ** 2 + dy ** 2) ** 0.5
-
+    length = math.sqrt(dx * dx + dy * dy)
     if length == 0:
         return mx, my
+    return mx + (-dy / length) * offset, my + (dx / length) * offset
 
-    ox = -dy / length * offset
-    oy = dx / length * offset
-    return mx + ox, my + oy
+
+def _transformer_symbol_points(x1, y1, x2, y2, radius=0.50):
+    mx, my = _midpoint(x1, y1, x2, y2)
+    dx = x2 - x1
+    dy = y2 - y1
+    length = math.sqrt(dx * dx + dy * dy)
+    if length == 0:
+        return (mx - radius, my), (mx + radius, my)
+    ux = dx / length
+    uy = dy / length
+    return (mx - ux * radius, my - uy * radius), (mx + ux * radius, my + uy * radius)
+
+
+def _circle_trace(cx, cy, r, color, hovertext):
+    theta = [i * 2 * math.pi / 60 for i in range(61)]
+    return go.Scatter(
+        x=[cx + r * math.cos(t) for t in theta],
+        y=[cy + r * math.sin(t) for t in theta],
+        mode="lines",
+        line=dict(color=color, width=2),
+        hoverinfo="text",
+        hovertext=hovertext,
+        showlegend=False,
+    )
 
 
 def plot_upgrade_ranking(upgrade_df: pd.DataFrame):
     if upgrade_df.empty:
         return None
-
-    fig, ax = plt.subplots(figsize=(17, 8))
     top = upgrade_df.head(10).copy()
-    ax.bar(top["violated_device"], top["upgrade_priority_score"])
-    ax.set_title("Upgrade Priority Ranking by Failed Device")
-    ax.set_xlabel("Device")
-    ax.set_ylabel("Upgrade Priority Score")
-    ax.tick_params(axis="x", rotation=35)
-    fig.tight_layout()
+    fig = go.Figure(data=[go.Bar(
+        x=top["violated_device"],
+        y=top["upgrade_priority_score"],
+        text=top["upgrade_priority_score"].round(1),
+        textposition="auto",
+        hovertemplate="<b>%{x}</b><br>Priority score: %{y:.2f}<extra></extra>",
+    )])
+    fig.update_layout(
+        title="Upgrade Priority Ranking by Failed Device",
+        xaxis_title="Device",
+        yaxis_title="Upgrade Priority Score",
+        height=450,
+        margin=dict(l=40, r=30, t=70, b=120),
+    )
     return fig
 
 
-def plot_recommended_upgrade_case(
-    net,
-    original_loads: pd.DataFrame,
-    base_case: pd.Series,
-    recommended_row: pd.Series,
-    overload_limit: float,
-    low_voltage_limit: float,
-    high_voltage_limit: float,
-    seed: int = 42,
-):
-    """Plots representative case for top recommended upgrade candidate."""
+def plot_recommended_upgrade_case(net, original_loads, base_case, recommended_row, overload_limit, low_voltage_limit, high_voltage_limit, seed=42):
     from model_builder import apply_base_case
 
     recommended_device = str(recommended_row["violated_device"])
@@ -90,7 +103,6 @@ def plot_recommended_upgrade_case(
         if str(net.line.at[idx, "name"]) == recommended_outage:
             outage_line_idx = idx
             break
-
     if outage_line_idx is None:
         raise ValueError(f"Could not find representative outaged line: {recommended_outage}")
 
@@ -106,252 +118,197 @@ def plot_recommended_upgrade_case(
     net.line.at[outage_line_idx, "in_service"] = True
 
     pos = build_topology_layout(net, seed=seed)
+    fig = go.Figure()
 
-    fig, ax = plt.subplots(figsize=(17, 10))
-
-    # Draw lines
+    # Lines
+    lx, ly, ltext, lhover = [], [], [], []
     for idx in net.line.index:
-        from_bus = int(net.line.at[idx, "from_bus"])
-        to_bus = int(net.line.at[idx, "to_bus"])
-        line_name = str(net.line.at[idx, "name"])
-
-        x1, y1 = pos[from_bus]
-        x2, y2 = pos[to_bus]
+        fbus = int(net.line.at[idx, "from_bus"])
+        tbus = int(net.line.at[idx, "to_bus"])
+        name = str(net.line.at[idx, "name"])
+        x1, y1 = pos[fbus]
+        x2, y2 = pos[tbus]
 
         if idx == outage_line_idx:
-            color = "blue"
-            linestyle = "--"
-            cont_text = "OUT"
-            flow_text = "OUT"
-            linewidth = 3.0
+            color, dash, width = "royalblue", "dash", 4
+            cont_text, flow_text, status = "OUT", "OUT", "Outaged"
         else:
             loading = float(cont_line_loading.loc[idx])
             p_from = float(cont_line_p_from.loc[idx])
-
-            if line_name == recommended_device:
-                color = "darkred"
-                linewidth = 5.0
+            if name == recommended_device:
+                color, width, status = "darkred", 7, "Recommended upgrade candidate"
             elif loading > overload_limit:
-                color = "red"
-                linewidth = 3.5
+                color, width, status = "red", 5, "Overloaded"
             else:
-                color = "black"
-                linewidth = 2.2
-
-            linestyle = "-"
+                color, width, status = "black", 3, "OK"
+            dash = "solid"
             cont_text = f"{loading:.1f}%"
             flow_text = f"{abs(p_from):.1f} MW"
 
-        ax.plot([x1, x2], [y1, y2], color=color, linestyle=linestyle, linewidth=linewidth, zorder=1)
+        base_loading = float(base_line_loading.loc[idx])
+        hover = (
+            f"<b>{name}</b><br>Type: Line<br>Status: {status}<br>"
+            f"Base loading: {base_loading:.2f}%<br>Contingency loading: {cont_text}<br>"
+            f"Flow: {flow_text}<br>From: {net.bus.at[fbus, 'name']}<br>To: {net.bus.at[tbus, 'name']}"
+        )
+
+        fig.add_trace(go.Scatter(
+            x=[x1, x2], y=[y1, y2], mode="lines",
+            line=dict(color=color, width=width, dash=dash),
+            hoverinfo="text", hovertext=hover, showlegend=False, name=name
+        ))
 
         if idx != outage_line_idx:
             p_from = float(cont_line_p_from.loc[idx])
-            if p_from >= 0:
-                start_x, start_y = x1, y1
-                end_x, end_y = x2, y2
-            else:
-                start_x, start_y = x2, y2
-                end_x, end_y = x1, y1
-
-            dx = end_x - start_x
-            dy = end_y - start_y
-
-            ax.arrow(
-                start_x + 0.25 * dx,
-                start_y + 0.25 * dy,
-                0.35 * dx,
-                0.35 * dy,
-                length_includes_head=True,
-                head_width=0.10,
-                head_length=0.16,
-                color=color,
-                zorder=2,
+            sx, sy, ex, ey = (x1, y1, x2, y2) if p_from >= 0 else (x2, y2, x1, y1)
+            fig.add_annotation(
+                x=sx + 0.58 * (ex - sx), y=sy + 0.58 * (ey - sy),
+                ax=sx + 0.42 * (ex - sx), ay=sy + 0.42 * (ey - sy),
+                xref="x", yref="y", axref="x", ayref="y",
+                showarrow=True, arrowhead=3, arrowsize=1, arrowwidth=max(1, width - 2),
+                arrowcolor=color, opacity=0.9,
             )
 
-        label_x, label_y = offset_label(x1, y1, x2, y2, offset=0.55)
-        base_loading = float(base_line_loading.loc[idx])
-        label_prefix = "UPGRADE CANDIDATE\\n" if line_name == recommended_device else ""
+        tx, ty = _offset_point(x1, y1, x2, y2, offset=1.15)
+        label = f"{name}<br>{cont_text}"
+        if name == recommended_device:
+            label = f"<b>UPGRADE</b><br>{name}<br>{cont_text}"
+        lx.append(tx); ly.append(ty); ltext.append(label); lhover.append(hover)
 
-        ax.text(
-            label_x,
-            label_y,
-            f"{label_prefix}{line_name}\\nBase: {base_loading:.1f}%\\nCont: {cont_text}\\nFlow: {flow_text}",
-            fontsize=7.2,
-            ha="center",
-            va="center",
-            bbox=dict(facecolor="white", edgecolor=color, alpha=0.90),
-            zorder=4,
-        )
+    fig.add_trace(go.Scatter(
+        x=lx, y=ly, mode="text", text=ltext,
+        textposition="middle center", textfont=dict(size=10, color="black"),
+        hoverinfo="text", hovertext=lhover, showlegend=False
+    ))
 
-    # Draw transformers
+    # Transformers
+    txs, tys, ttext, thover = [], [], [], []
     for idx in net.trafo.index:
-        hv_bus = int(net.trafo.at[idx, "hv_bus"])
-        lv_bus = int(net.trafo.at[idx, "lv_bus"])
-        trafo_name = str(net.trafo.at[idx, "name"])
-
-        x1, y1 = pos[hv_bus]
-        x2, y2 = pos[lv_bus]
+        hv = int(net.trafo.at[idx, "hv_bus"])
+        lv = int(net.trafo.at[idx, "lv_bus"])
+        name = str(net.trafo.at[idx, "name"])
+        x1, y1 = pos[hv]
+        x2, y2 = pos[lv]
 
         loading = float(cont_trafo_loading.loc[idx])
         base_loading = float(base_trafo_loading.loc[idx])
         p_hv = float(cont_trafo_p_hv.loc[idx])
 
-        if trafo_name == recommended_device:
-            color = "darkred"
-            linewidth = 5.0
+        if name == recommended_device:
+            color, width, status = "darkred", 7, "Recommended upgrade candidate"
         elif loading > overload_limit:
-            color = "red"
-            linewidth = 3.5
+            color, width, status = "red", 5, "Overloaded"
         else:
-            color = "purple"
-            linewidth = 3.0
+            color, width, status = "purple", 4, "OK"
 
-        ax.plot([x1, x2], [y1, y2], color=color, linewidth=linewidth, linestyle="--", zorder=2)
-
-        marker_x, marker_y = offset_label(x1, y1, x2, y2, offset=0.0)
-        ax.scatter(marker_x, marker_y, s=420, marker="s", color="violet", edgecolors=color, linewidths=2, zorder=6)
-        ax.text(marker_x, marker_y, "XFMR", fontsize=7.2, ha="center", va="center", fontweight="bold", zorder=7)
-
-        # Shift all transformer description boxes to the right.
-        label_x, label_y = offset_label(x1, y1, x2, y2, offset=0.7)
-        label_x += 1.1
-
-        label_prefix = "UPGRADE CANDIDATE\\n" if trafo_name == recommended_device else ""
-
-        ax.text(
-            label_x,
-            label_y,
-            f"{label_prefix}{trafo_name}\\nBase: {base_loading:.1f}%\\nCont: {loading:.1f}%\\nFlow: {abs(p_hv):.1f} MW",
-            fontsize=7.2,
-            ha="center",
-            va="center",
-            bbox=dict(facecolor="white", edgecolor=color, alpha=0.90),
-            zorder=8,
+        hover = (
+            f"<b>{name}</b><br>Type: Transformer<br>Status: {status}<br>"
+            f"Base loading: {base_loading:.2f}%<br>Contingency loading: {loading:.2f}%<br>"
+            f"HV flow: {abs(p_hv):.2f} MW<br>HV bus: {net.bus.at[hv, 'name']}<br>LV bus: {net.bus.at[lv, 'name']}"
         )
 
-    # Draw buses
+        fig.add_trace(go.Scatter(
+            x=[x1, x2], y=[y1, y2], mode="lines",
+            line=dict(color=color, width=width, dash="dot"),
+            hoverinfo="text", hovertext=hover, showlegend=False, name=name
+        ))
+
+        (c1x, c1y), (c2x, c2y) = _transformer_symbol_points(x1, y1, x2, y2, radius=0.55)
+        fig.add_trace(_circle_trace(c1x, c1y, 0.48, color, hover))
+        fig.add_trace(_circle_trace(c2x, c2y, 0.48, color, hover))
+
+        label_x, label_y = _offset_point(x1, y1, x2, y2, offset=1.65)
+        label_x += 0.95
+        label = f"{name}<br>{loading:.1f}%"
+        if name == recommended_device:
+            label = f"<b>UPGRADE</b><br>{name}<br>{loading:.1f}%"
+        txs.append(label_x); tys.append(label_y); ttext.append(label); thover.append(hover)
+
+    fig.add_trace(go.Scatter(
+        x=txs, y=tys, mode="text", text=ttext,
+        textposition="middle center", textfont=dict(size=10, color="purple"),
+        hoverinfo="text", hovertext=thover, showlegend=False
+    ))
+
+    # Buses
+    bx, by, btext, bhover, bcolor = [], [], [], [], []
     for bus_idx in net.bus.index:
         x, y = pos[int(bus_idx)]
-        bus_name = str(net.bus.at[bus_idx, "name"])
-        voltage = float(cont_bus_voltage.loc[bus_idx])
-        base_voltage = float(base_bus_voltage.loc[bus_idx])
-
-        bus_color = "orange" if voltage < low_voltage_limit or voltage > high_voltage_limit else "lightgray"
-
-        ax.scatter(x, y, s=360, color=bus_color, edgecolors="black", zorder=9)
-        ax.text(
-            x,
-            y + 0.55,
-            f"{bus_name}\\nBase: {base_voltage:.3f} pu\\nCont: {voltage:.3f} pu",
-            fontsize=7.2,
-            ha="center",
-            fontweight="bold",
-            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.75),
-            zorder=10,
+        name = str(net.bus.at[bus_idx, "name"])
+        base_v = float(base_bus_voltage.loc[bus_idx])
+        cont_v = float(cont_bus_voltage.loc[bus_idx])
+        voltage_bad = cont_v < low_voltage_limit or cont_v > high_voltage_limit
+        bx.append(x); by.append(y); btext.append(name)
+        bcolor.append("orange" if voltage_bad else "lightgray")
+        bhover.append(
+            f"<b>{name}</b><br>Type: Bus<br>Nominal kV: {net.bus.at[bus_idx, 'vn_kv']}<br>"
+            f"Base voltage: {base_v:.4f} pu<br>Contingency voltage: {cont_v:.4f} pu"
         )
 
-    # Draw generators
+    fig.add_trace(go.Scatter(
+        x=bx, y=by, mode="markers+text",
+        marker=dict(size=22, color=bcolor, line=dict(color="black", width=2)),
+        text=btext, textposition="top center", textfont=dict(size=11, color="black"),
+        hoverinfo="text", hovertext=bhover, showlegend=False
+    ))
+
+    # Generator labels
+    gx, gy, gtext, ghover = [], [], [], []
     for idx in net.gen.index:
         bus = int(net.gen.at[idx, "bus"])
-        gen_name = str(net.gen.at[idx, "name"])
-        p_mw = float(net.gen.at[idx, "p_mw"])
         x, y = pos[bus]
+        name = str(net.gen.at[idx, "name"])
+        p = float(net.gen.at[idx, "p_mw"])
+        gx.append(x - 0.85); gy.append(y - 1.35)
+        gtext.append(f"GEN<br>{name}")
+        ghover.append(f"<b>{name}</b><br>Type: Generator<br>Dispatch: {p:.2f} MW<br>Bus: {net.bus.at[bus, 'name']}")
 
-        ax.text(
-            x - 0.6,
-            y - 0.95,
-            f"{gen_name}\\n{p_mw:.1f} MW",
-            fontsize=7.2,
-            ha="center",
-            bbox=dict(facecolor="lightyellow", edgecolor="orange", alpha=0.9),
-            zorder=11,
-        )
+    fig.add_trace(go.Scatter(
+        x=gx, y=gy, mode="markers+text",
+        marker=dict(size=16, symbol="triangle-up", color="gold", line=dict(color="orange", width=2)),
+        text=gtext, textposition="bottom center", textfont=dict(size=9, color="darkorange"),
+        hoverinfo="text", hovertext=ghover, showlegend=False
+    ))
 
-    # Draw loads, shifted down from other boxes
+    # Load labels
+    loadx, loady, loadtext, loadhover = [], [], [], []
     for idx in net.load.index:
         bus = int(net.load.at[idx, "bus"])
-        load_name = str(net.load.at[idx, "name"])
-        p_mw = float(net.load.at[idx, "p_mw"])
         x, y = pos[bus]
+        name = str(net.load.at[idx, "name"])
+        p = float(net.load.at[idx, "p_mw"])
+        q = float(net.load.at[idx, "q_mvar"])
+        loadx.append(x + 0.85); loady.append(y - 1.65)
+        loadtext.append(f"LOAD<br>{name}")
+        loadhover.append(f"<b>{name}</b><br>Type: Load<br>P: {p:.2f} MW<br>Q: {q:.2f} MVAr<br>Bus: {net.bus.at[bus, 'name']}")
 
-        ax.text(
-            x + 0.6,
-            y - 1.55,
-            f"{load_name}\\n{p_mw:.1f} MW",
-            fontsize=7.2,
-            ha="center",
-            bbox=dict(facecolor="mistyrose", edgecolor="darkred", alpha=0.88, boxstyle="round,pad=0.35"),
-            zorder=11,
-        )
+    fig.add_trace(go.Scatter(
+        x=loadx, y=loady, mode="markers+text",
+        marker=dict(size=15, symbol="square", color="mistyrose", line=dict(color="darkred", width=2)),
+        text=loadtext, textposition="bottom center", textfont=dict(size=9, color="darkred"),
+        hoverinfo="text", hovertext=loadhover, showlegend=False
+    ))
 
-    fig.suptitle(
-        "Interactive Multi-Basecase N-1 Study — Recommended Upgrade Visualization",
-        fontsize=13,
-        fontweight="bold",
-        y=0.98,
+    summary = (
+        f"Recommended first upgrade: {recommended_device} | {recommended_type} | "
+        f"Case: {recommended_case} | Outage: {recommended_outage} | "
+        f"Failures: {recommended_row['failure_count']} | "
+        f"Max Loading: {recommended_row['max_loading_percent']:.1f}% | "
+        f"Score: {recommended_row['upgrade_priority_score']:.1f}"
     )
 
-    summary_text = (
-        "RECOMMENDED FIRST UPGRADE\\n"
-        f"Device: {recommended_device}   |   Type: {recommended_type}\\n"
-        f"Representative Case: {recommended_case}   |   Outaged: {recommended_outage}\\n"
-        f"Failure Count: {recommended_row['failure_count']}   |   "
-        f"Max Loading: {recommended_row['max_loading_percent']:.1f}%   |   "
-        f"Priority Score: {recommended_row['upgrade_priority_score']:.1f}"
+    fig.update_layout(
+        title=dict(text="Interactive Multi-Basecase N-1 Study — One-Line Style Recommended Upgrade Plot", x=0.5, xanchor="center"),
+        annotations=[
+            dict(text=summary, x=0.5, y=-0.10, xref="paper", yref="paper", showarrow=False, align="center", font=dict(size=12), bordercolor="black", borderwidth=1, bgcolor="white", opacity=0.95),
+            dict(text="Legend: blue dashed = outaged line | dark red = recommended upgrade | red = overloaded | orange bus = voltage violation | hover/zoom/pan for details", x=0.5, y=-0.17, xref="paper", yref="paper", showarrow=False, align="center", font=dict(size=11), bgcolor="white", opacity=0.9),
+        ],
+        height=860,
+        margin=dict(l=20, r=20, t=70, b=155),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        plot_bgcolor="white",
+        dragmode="pan",
     )
-
-    ax.text(
-        0.5,
-        -0.16,
-        summary_text,
-        transform=ax.transAxes,
-        fontsize=9.2,
-        ha="center",
-        va="top",
-        fontweight="bold",
-        bbox=dict(facecolor="white", edgecolor="black", alpha=0.96, boxstyle="round,pad=0.5"),
-    )
-
-    legend_text = (
-        "LEGEND\\n"
-        "Blue dashed = Outaged element\\n"
-        "Dark red = Recommended upgrade candidate\\n"
-        "Red = Other overloaded device\\n"
-        "Orange bus = Voltage violation\\n"
-        "Arrow = MW flow direction"
-    )
-
-    ax.text(
-        0.01,
-        0.01,
-        legend_text,
-        transform=ax.transAxes,
-        fontsize=7.2,
-        ha="left",
-        va="bottom",
-        bbox=dict(facecolor="white", edgecolor="gray", alpha=0.92, boxstyle="round,pad=0.35"),
-    )
-
-    callout_text = (
-        "UPGRADE PRIORITY #1\\n"
-        f"{recommended_device}\\n"
-        f"Fails in {recommended_row['failure_count']} contingency case(s)"
-    )
-
-    ax.text(
-        0.99,
-        0.07,
-        callout_text,
-        transform=ax.transAxes,
-        fontsize=8.2,
-        ha="right",
-        va="bottom",
-        fontweight="bold",
-        bbox=dict(facecolor="mistyrose", edgecolor="darkred", alpha=0.95, boxstyle="round,pad=0.4"),
-    )
-
-    ax.set_aspect("equal")
-    ax.axis("off")
-    plt.subplots_adjust(bottom=0.25, top=0.86)
-
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig

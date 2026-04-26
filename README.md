@@ -32,3 +32,26 @@ Lines must connect buses at the same voltage level. Use transformers for voltage
 
 The one-line diagram is interactive. Use browser zoom/pan and hover over devices to inspect loading, voltage, flow, and upgrade-candidate details.
 
+
+
+## Layout Update
+
+The interactive one-line plot now uses a deterministic layered layout for the default model. This reduces non-connected line crossings by separating voltage levels into rows:
+
+- 230 kV buses on the upper row
+- 115 kV buses on the middle row
+- 12.5 kV generator terminal buses below or above their point of interconnection
+
+If users add custom buses that do not match the default naming pattern, the app falls back to wide NetworkX placement for those additional nodes.
+
+
+## Topology Revision
+
+The default network was revised to remove the following lines:
+
+- Line 1-3
+- Line 2-3 B
+- Line 4-7 Tie
+- Line 5-7
+
+The remaining 230 kV path uses `Line 1-2` and `Line 2-3`. The previous `Line 2-3 A` was renamed to `Line 2-3`.

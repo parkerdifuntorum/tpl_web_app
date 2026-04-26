@@ -41,19 +41,16 @@ def default_loads():
 
 def default_lines():
     return pd.DataFrame([
-        # 230 kV transmission mesh
+        # 230 kV transmission
         {"name": "Line 1-2", "from_bus_id": "B1", "to_bus_id": "B2", "length_km": 40.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.55, "in_service": True},
-        {"name": "Line 2-3 A", "from_bus_id": "B2", "to_bus_id": "B3", "length_km": 35.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.38, "in_service": True},
-        {"name": "Line 2-3 B", "from_bus_id": "B2", "to_bus_id": "B3", "length_km": 35.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.38, "in_service": True},
-        {"name": "Line 1-3", "from_bus_id": "B1", "to_bus_id": "B3", "length_km": 60.0, "r_ohm_per_km": 0.04, "x_ohm_per_km": 0.60, "c_nf_per_km": 12.0, "max_i_ka": 0.45, "in_service": True},
+        {"name": "Line 2-3", "from_bus_id": "B2", "to_bus_id": "B3", "length_km": 35.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.38, "in_service": True},
 
         # 115 kV subtransmission mesh
+        # No direct line connections between different voltage levels.
         {"name": "Line 4-5", "from_bus_id": "B4", "to_bus_id": "B5", "length_km": 25.0, "r_ohm_per_km": 0.08, "x_ohm_per_km": 0.40, "c_nf_per_km": 12.0, "max_i_ka": 0.45, "in_service": True},
-        {"name": "Line 4-7 Tie", "from_bus_id": "B4", "to_bus_id": "B7", "length_km": 50.0, "r_ohm_per_km": 0.10, "x_ohm_per_km": 0.45, "c_nf_per_km": 12.0, "max_i_ka": 0.30, "in_service": True},
         {"name": "Line 5-6", "from_bus_id": "B5", "to_bus_id": "B6", "length_km": 30.0, "r_ohm_per_km": 0.08, "x_ohm_per_km": 0.38, "c_nf_per_km": 12.0, "max_i_ka": 0.38, "in_service": True},
         {"name": "Line 6-7", "from_bus_id": "B6", "to_bus_id": "B7", "length_km": 28.0, "r_ohm_per_km": 0.08, "x_ohm_per_km": 0.38, "c_nf_per_km": 12.0, "max_i_ka": 0.35, "in_service": True},
         {"name": "Line 4-6", "from_bus_id": "B4", "to_bus_id": "B6", "length_km": 35.0, "r_ohm_per_km": 0.09, "x_ohm_per_km": 0.42, "c_nf_per_km": 12.0, "max_i_ka": 0.35, "in_service": True},
-        {"name": "Line 5-7", "from_bus_id": "B5", "to_bus_id": "B7", "length_km": 32.0, "r_ohm_per_km": 0.08, "x_ohm_per_km": 0.40, "c_nf_per_km": 12.0, "max_i_ka": 0.34, "in_service": True},
     ])
 
 

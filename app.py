@@ -11,6 +11,7 @@ from defaults import (
     default_ext_grids,
     default_base_cases,
 )
+
 from model_builder import build_network
 from study_engine import run_multicase_n1_study, rank_upgrade_candidates
 from plotting import plot_recommended_upgrade_case, plot_upgrade_ranking

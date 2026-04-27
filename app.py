@@ -19,7 +19,6 @@ from plotting import plot_recommended_upgrade_case, plot_upgrade_ranking
 
 st.set_page_config(page_title="TPL N-1 Study Sandbox", layout="wide")
 
-
 def init_state():
     defaults = {
         "buses_df": default_buses(),

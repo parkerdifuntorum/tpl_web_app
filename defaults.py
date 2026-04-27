@@ -3,7 +3,8 @@ import pandas as pd
 
 def default_buses():
     return pd.DataFrame([
-        {"bus_id": "B1", "name": "Bus 1 - Grid Source", "vn_kv": 230.0},
+        {"bus_id": "B0", "name": "Bus 0 - Slack / Grid Source", "vn_kv": 230.0},
+        {"bus_id": "B1", "name": "Bus 1 - 230 kV Switching Node", "vn_kv": 230.0},
         {"bus_id": "B2", "name": "Bus 2 - Gen Hub", "vn_kv": 230.0},
         {"bus_id": "B3", "name": "Bus 3 - Transfer Bus", "vn_kv": 230.0},
         {"bus_id": "B4", "name": "Bus 4 - Load Pocket", "vn_kv": 115.0},
@@ -18,7 +19,7 @@ def default_buses():
 
 def default_ext_grids():
     return pd.DataFrame([
-        {"name": "Grid Source", "bus_id": "B1", "vm_pu": 1.00},
+        {"name": "Grid Source", "bus_id": "B0", "vm_pu": 1.00},
     ])
 
 
@@ -42,6 +43,10 @@ def default_loads():
 def default_lines():
     return pd.DataFrame([
         # 230 kV transmission
+        # B0 is the slack/grid source.
+        # B1 is the 230 kV switching node connected to Transformer 1-7 and Line 1-2.
+        {"name": "Line 0-1", "from_bus_id": "B0", "to_bus_id": "B1", "length_km": 20.0, "r_ohm_per_km": 0.030, "x_ohm_per_km": 0.50, "c_nf_per_km": 12.0, "max_i_ka": 0.60, "in_service": True},
+        {"name": "Line 0-3", "from_bus_id": "B0", "to_bus_id": "B3", "length_km": 65.0, "r_ohm_per_km": 0.040, "x_ohm_per_km": 0.60, "c_nf_per_km": 12.0, "max_i_ka": 0.45, "in_service": True},
         {"name": "Line 1-2", "from_bus_id": "B1", "to_bus_id": "B2", "length_km": 40.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.55, "in_service": True},
         {"name": "Line 2-3", "from_bus_id": "B2", "to_bus_id": "B3", "length_km": 35.0, "r_ohm_per_km": 0.035, "x_ohm_per_km": 0.55, "c_nf_per_km": 12.0, "max_i_ka": 0.38, "in_service": True},
 

@@ -11,14 +11,11 @@ def build_topology_layout(net, seed: int = 42):
     """
     Build automatic bus coordinates from current network topology.
 
-    For the default model, this uses a deterministic layered one-line layout
-    to reduce non-connected line crossings:
-      - 230 kV buses on the upper row
-      - 115 kV buses on the middle row
-      - 12.5 kV generator terminal buses below or above their interconnection buses
-
-    For user-added buses that do not match the default naming pattern,
-    the app falls back to wide NetworkX placement for those nodes.
+    For the default model, this uses a deterministic layered one-line layout:
+      - B0 slack/grid source above the 230 kV row
+      - B1/B2/B3 on the 230 kV row
+      - B7/B6/B5/B4 on the 115 kV row
+      - generator terminal buses on the 12.5 kV row
     """
     graph = nx.Graph()
 
@@ -43,6 +40,8 @@ def build_topology_layout(net, seed: int = 42):
         return {}
 
     def infer_bus_id(bus_name: str):
+        if bus_name.startswith("Bus 0"):
+            return "B0"
         if bus_name.startswith("Bus 1"):
             return "B1"
         if bus_name.startswith("Bus 2"):
@@ -65,18 +64,22 @@ def build_topology_layout(net, seed: int = 42):
             return "G7"
         return None
 
-    # Crossing-reduced layered one-line positions for the default model.
-    # 115 kV row is ordered to reduce crossings between 4-7, 5-7, 6-7, 4-6, 5-6, and 4-5.
     bus_id_positions = {
+        # Slack/source bus
+        "B0": (12.0, 20.0),
+
+        # 230 kV row
         "B1": (0.0, 10.0),
         "B2": (12.0, 10.0),
         "B3": (24.0, 10.0),
 
+        # 115 kV row
         "B7": (0.0, 0.0),
         "B6": (8.0, 0.0),
         "B5": (16.0, 0.0),
         "B4": (24.0, 0.0),
 
+        # 12.5 kV generator terminal buses
         "G7": (0.0, -7.0),
         "G5": (16.0, -7.0),
         "G2": (12.0, 17.0),
@@ -90,7 +93,7 @@ def build_topology_layout(net, seed: int = 42):
         if bus_id in bus_id_positions:
             pos[int(idx)] = bus_id_positions[bus_id]
 
-    # Fallback for custom/user-added buses.
+    # Fallback for any user-added buses.
     missing = [int(idx) for idx in net.bus.index if int(idx) not in pos]
     if missing:
         spring_pos = nx.spring_layout(graph, seed=seed, k=3.0, iterations=400)
@@ -248,6 +251,8 @@ def plot_recommended_upgrade_case(net, original_loads, base_case, recommended_ro
             )
 
         line_label_offsets = {
+            "Line 0-1": 1.25,
+            "Line 0-3": -1.65,
             "Line 1-2": 1.25,
             "Line 2-3": 1.45,
             "Line 4-5": 1.25,

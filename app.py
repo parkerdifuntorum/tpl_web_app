@@ -11,13 +11,15 @@ from defaults import (
     default_ext_grids,
     default_base_cases,
 )
-
 from model_builder import build_network
 from study_engine import run_multicase_n1_study, rank_upgrade_candidates
 from plotting import plot_recommended_upgrade_case, plot_upgrade_ranking
 
 
 st.set_page_config(page_title="TPL N-1 Study Sandbox", layout="wide")
+
+APP_DATA_VERSION = "slack-node-v1"
+
 
 def init_state():
     defaults = {
@@ -29,6 +31,14 @@ def init_state():
         "ext_grids_df": default_ext_grids(),
         "base_cases_df": default_base_cases(),
     }
+
+    # Force session-state reload when the default topology changes.
+    if st.session_state.get("app_data_version") != APP_DATA_VERSION:
+        for key, value in defaults.items():
+            st.session_state[key] = value.copy()
+        st.session_state["app_data_version"] = APP_DATA_VERSION
+        return
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value.copy()

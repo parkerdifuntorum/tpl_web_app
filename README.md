@@ -1,3 +1,5 @@
+Developed by Parker Difuntorum
+
 # Interactive TPL-Style N-1 Study Sandbox
 
 This Streamlit app is an editable transmission planning sandbox using pandapower, pandas, NetworkX, and Plotly.
